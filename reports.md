@@ -11,4 +11,4 @@ We...
 | Justin     | Created home page prototype     | None | Helped setup the end user interface |
 | Row 3    | Data     | More     | More     |
 | Tony    | Helped set up repository     | More     | Finish writing the README then ask for further tasks     |
-| Row 5    | Data     | More     | More     |
+| Zara    | Set up SQLite database and established connection   | None     | Design tables, schema, and user model     |
