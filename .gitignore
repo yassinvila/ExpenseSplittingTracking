@@ -38,6 +38,7 @@ venv.bak/
 .idea/
 *.swp
 *.swo
+.vs/
 
 # Testing
 .coverage
@@ -65,3 +66,4 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
