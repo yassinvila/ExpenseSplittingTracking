@@ -17,4 +17,4 @@
 | Justin | Created a login and signup feature | None | I will work on dashboard |
 | Ahnaf |  |  |  |
 | Tony    |  |  |  |
-| Zara    |  |  |  |
+| Zara    | Created ERD for database, translated diagram into actual database tables using SQL, tested DB w/ sample data  | None  | Add functions that will allow for recording expenses, splitting it, and updating balances  |
