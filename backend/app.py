@@ -378,6 +378,314 @@ def get_recent_activity():
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/api/expenses', methods=['POST'])
+def add_expense():
+    """
+    Add a new expense to a group
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['amount', 'description', 'group_id']
+        if not data or not all(k in data for k in required_fields):
+            return jsonify({'error': 'Missing required fields: amount, description, group_id'}), 400
+        
+        amount = float(data['amount'])
+        description = data['description'].strip()
+        group_id = int(data['group_id'])
+        
+        # Validate amount
+        if amount <= 0:
+            return jsonify({'error': 'Amount must be greater than 0'}), 400
+        
+        # Check if user is member of the group
+        conn = get_db_connection()
+        membership = conn.execute(
+            'SELECT 1 FROM members WHERE user_id = ? AND group_id = ? AND deleted_at IS NULL', 
+            (user_id, group_id)
+        ).fetchone()
+        
+        if not membership:
+            conn.close()
+            return jsonify({'error': 'You are not a member of this group'}), 403
+        
+        # Get group members
+        members = conn.execute(
+            'SELECT user_id FROM members WHERE group_id = ? AND deleted_at IS NULL', 
+            (group_id,)
+        ).fetchall()
+        
+        if len(members) < 2:
+            conn.close()
+            return jsonify({'error': 'Group must have at least 2 members to add expenses'}), 400
+        
+        # Add expense
+        now = datetime.now().isoformat()
+        cursor = conn.execute(
+            'INSERT INTO expenses (group_id, description, amount, paid_by, created_at) VALUES (?, ?, ?, ?, ?)',
+            (group_id, description, amount, user_id, now)
+        )
+        
+        expense_id = cursor.lastrowid
+        
+        # Split expense equally among all members (excluding the payer)
+        share_amount = round(amount / len(members), 2)
+        
+        for member in members:
+            member_id = member['user_id']
+            if member_id != user_id:  # Don't create balance for the person who paid
+                conn.execute(
+                    'INSERT INTO balances (group_id, lender, borrower, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    (group_id, user_id, member_id, share_amount, now, now)
+                )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Expense added successfully',
+            'expense_id': expense_id,
+            'amount': amount,
+            'description': description,
+            'group_id': group_id,
+            'paid_by': user_id
+        }), 201
+        
+    except ValueError as e:
+        return jsonify({'error': 'Invalid amount or group_id format'}), 400
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/payments', methods=['POST'])
+def record_payment():
+    """
+    Record a payment between users
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['amount', 'paid_to']
+        if not data or not all(k in data for k in required_fields):
+            return jsonify({'error': 'Missing required fields: amount, paid_to'}), 400
+        
+        amount = float(data['amount'])
+        paid_to = int(data['paid_to'])
+        
+        # Validate amount
+        if amount <= 0:
+            return jsonify({'error': 'Amount must be greater than 0'}), 400
+        
+        # Can't pay yourself
+        if paid_to == user_id:
+            return jsonify({'error': 'Cannot pay yourself'}), 400
+        
+        # Check if recipient exists
+        conn = get_db_connection()
+        recipient = conn.execute(
+            'SELECT id FROM users WHERE id = ?', (paid_to,)
+        ).fetchone()
+        
+        if not recipient:
+            conn.close()
+            return jsonify({'error': 'Recipient user not found'}), 404
+        
+        # Record payment
+        now = datetime.now().isoformat()
+        cursor = conn.execute(
+            'INSERT INTO payments (paid_by, paid_to, amount, paid_at) VALUES (?, ?, ?, ?)',
+            (user_id, paid_to, amount, now)
+        )
+        
+        payment_id = cursor.lastrowid
+        
+        # Update balances - reduce what the payer owes to the recipient
+        # Find existing balance where recipient is lender and payer is borrower
+        balance = conn.execute(
+            'SELECT amount FROM balances WHERE lender = ? AND borrower = ?', 
+            (paid_to, user_id)
+        ).fetchone()
+        
+        if balance:
+            current_amount = balance['amount']
+            new_amount = max(0, current_amount - amount)
+            
+            conn.execute(
+                'UPDATE balances SET amount = ?, updated_at = ? WHERE lender = ? AND borrower = ?',
+                (new_amount, now, paid_to, user_id)
+            )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Payment recorded successfully',
+            'payment_id': payment_id,
+            'amount': amount,
+            'paid_by': user_id,
+            'paid_to': paid_to
+        }), 201
+        
+    except ValueError as e:
+        return jsonify({'error': 'Invalid amount or user_id format'}), 400
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/groups', methods=['GET'])
+def get_user_groups():
+    """
+    Get all groups that the user is a member of
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = get_db_connection()
+        
+        # Get user's groups with member count
+        groups_query = """
+            SELECT g.group_id, g.group_name, g.group_description, g.created_by,
+                   COUNT(m.user_id) as member_count
+            FROM groups g
+            JOIN members m ON g.group_id = m.group_id
+            WHERE m.user_id = ? AND m.deleted_at IS NULL AND g.deleted_at IS NULL
+            GROUP BY g.group_id
+            ORDER BY g.group_name
+        """
+        
+        groups = conn.execute(groups_query, (user_id,)).fetchall()
+        
+        conn.close()
+        
+        groups_list = []
+        for group in groups:
+            groups_list.append({
+                'group_id': group['group_id'],
+                'group_name': group['group_name'],
+                'group_description': group['group_description'],
+                'created_by': group['created_by'],
+                'member_count': group['member_count']
+            })
+        
+        return jsonify({
+            'groups': groups_list,
+            'user_id': user_id
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/groups', methods=['POST'])
+def create_group():
+    """
+    Create a new group
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or not data.get('group_name'):
+            return jsonify({'error': 'Group name is required'}), 400
+        
+        group_name = data['group_name'].strip()
+        group_description = data.get('group_description', '').strip()
+        
+        if not group_name:
+            return jsonify({'error': 'Group name cannot be empty'}), 400
+        
+        conn = get_db_connection()
+        
+        # Create group
+        now = datetime.now().isoformat()
+        cursor = conn.execute(
+            'INSERT INTO groups (group_name, group_description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+            (group_name, group_description, user_id, now, now)
+        )
+        
+        group_id = cursor.lastrowid
+        
+        # Add creator as member
+        conn.execute(
+            'INSERT INTO members (user_id, group_id, joined_at) VALUES (?, ?, ?)',
+            (user_id, group_id, now)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Group created successfully',
+            'group_id': group_id,
+            'group_name': group_name,
+            'group_description': group_description,
+            'created_by': user_id
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
     # Run the application
     app.run(

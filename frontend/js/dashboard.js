@@ -51,6 +51,9 @@ async function checkAuthentication() {
         // Load balance data
         loadBalanceData();
         
+        // Load groups data
+        loadGroupsData();
+        
     } catch (error) {
         console.error('Authentication check failed:', error);
         // On network error, allow user to stay but show warning
@@ -163,6 +166,65 @@ function displayBalanceError() {
     // Show error state or keep placeholder data
     console.warn('Using placeholder balance data due to API error');
     // The HTML already has placeholder values, so we don't need to change anything
+}
+
+async function loadGroupsData() {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+        console.error('No authentication token available');
+        return;
+    }
+    
+    try {
+        const response = await fetch('http://localhost:5000/api/groups', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API Error Response:', errorText);
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const groupsData = await response.json();
+        populateGroupDropdowns(groupsData.groups);
+        
+    } catch (error) {
+        console.error('Failed to load groups data:', error);
+        // Use placeholder data
+        populateGroupDropdowns([]);
+    }
+}
+
+function populateGroupDropdowns(groups) {
+    // Populate expense group dropdown
+    const expenseGroupSelect = document.getElementById('expenseGroup');
+    if (expenseGroupSelect) {
+        expenseGroupSelect.innerHTML = '<option value="">Select group</option>';
+        groups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.group_id;
+            option.textContent = group.group_name;
+            expenseGroupSelect.appendChild(option);
+        });
+    }
+    
+    // Populate settle group dropdown
+    const settleGroupSelect = document.getElementById('settleGroup');
+    if (settleGroupSelect) {
+        settleGroupSelect.innerHTML = '<option value="">Select group</option>';
+        groups.forEach(group => {
+            const option = document.createElement('option');
+            option.value = group.group_id;
+            option.textContent = group.group_name;
+            settleGroupSelect.appendChild(option);
+        });
+    }
 }
 
 function addLogoutButton() {
@@ -380,49 +442,95 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-function handleAddExpense() {
-    const formData = new FormData(document.getElementById('addExpenseForm'));
+async function handleAddExpense() {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+        alert('Please log in to add expenses');
+        return;
+    }
+    
     const expenseData = {
-        amount: parseFloat(formData.get('expenseAmount') || document.getElementById('expenseAmount').value),
-        currency: document.getElementById('expenseCurrency').value,
+        amount: parseFloat(document.getElementById('expenseAmount').value),
         description: document.getElementById('expenseDescription').value,
-        payer: document.getElementById('expensePayer').value,
-        date: document.getElementById('expenseDate').value,
-        group: document.getElementById('expenseGroup').value,
-        category: document.getElementById('expenseCategory').value,
-        participants: Array.from(document.querySelectorAll('#addExpenseModal .participant-item input[type="checkbox"]:checked')).map(cb => cb.value),
-        splitMethod: document.getElementById('expenseSplitMethod').value,
-        note: document.getElementById('expenseNote').value
+        group_id: parseInt(document.getElementById('expenseGroup').value)
     };
     
+    // Validate required fields
+    if (!expenseData.amount || !expenseData.description || !expenseData.group_id) {
+        alert('Please fill in all required fields');
+        return;
+    }
     
-    // TODO: Send to backend API
-    // For now, just close the modal
-    closeModal('addExpenseModal');
-    
-    // Show success message
-    alert('Expense added successfully! (This is a placeholder)');
+    try {
+        const response = await fetch('http://localhost:5000/api/expenses', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(expenseData)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            closeModal('addExpenseModal');
+            alert('Expense added successfully!');
+            // Reload balance data to reflect the new expense
+            loadBalanceData();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Failed to add expense:', error);
+        alert('Failed to add expense. Please try again.');
+    }
 }
 
-function handleSettleExpense() {
-    const formData = new FormData(document.getElementById('settleExpenseForm'));
+async function handleSettleExpense() {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+        alert('Please log in to record payments');
+        return;
+    }
+    
     const settleData = {
-        amount: parseFloat(formData.get('settleAmount') || document.getElementById('settleAmount').value),
-        currency: document.getElementById('settleCurrency').value,
-        payer: document.getElementById('settlePayer').value,
-        payee: document.getElementById('settlePayee').value,
-        date: document.getElementById('settleDate').value,
-        group: document.getElementById('settleGroup').value,
-        note: document.getElementById('settleNote').value
+        amount: parseFloat(document.getElementById('settleAmount').value),
+        paid_to: parseInt(document.getElementById('settlePayee').value)
     };
     
+    // Validate required fields
+    if (!settleData.amount || !settleData.paid_to) {
+        alert('Please fill in all required fields');
+        return;
+    }
     
-    // TODO: Send to backend API
-    // For now, just close the modal
-    closeModal('settleExpenseModal');
-    
-    // Show success message
-    alert('Payment recorded successfully! (This is a placeholder)');
+    try {
+        const response = await fetch('http://localhost:5000/api/payments', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(settleData)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            closeModal('settleExpenseModal');
+            alert('Payment recorded successfully!');
+            // Reload balance data to reflect the payment
+            loadBalanceData();
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Failed to record payment:', error);
+        alert('Failed to record payment. Please try again.');
+    }
 }
 
 // Make functions globally available
