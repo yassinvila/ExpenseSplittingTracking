@@ -28,7 +28,6 @@ for (let i = 0; i < cards.length; i += perRow) {
   });
 }
 
-
 // Steps
 gsap.from(".step", {
   scrollTrigger: { trigger: ".how-it-works", start: "top 80%" },
@@ -58,9 +57,6 @@ gsap.from("footer .footer-column", {
   duration: 0.8,
   ease: "power2.out"
 });
-
-
-gsap.registerPlugin(ScrollTrigger);
 
 const features = gsap.utils.toArray(".feature-card");
 
