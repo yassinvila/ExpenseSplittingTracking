@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS groups (
     group_id INTEGER PRIMARY KEY NOT NULL,
     group_name TEXT NOT NULL,
     group_description TEXT,
+    join_code TEXT UNIQUE NOT NULL,
     created_by INTEGER NOT NULL,
     created_at TEXT,
     updated_at TEXT,

@@ -57,7 +57,6 @@ async function checkAuthentication() {
     } catch (error) {
         console.error('Authentication check failed:', error);
         // On network error, allow user to stay but show warning
-        console.warn('Could not verify authentication, proceeding with cached data');
         const userData = JSON.parse(user);
         displayUserInfo(userData);
         // Try to load balance data even if auth check failed
@@ -164,7 +163,6 @@ function displayBalanceData(balanceData) {
 
 function displayBalanceError() {
     // Show error state or keep placeholder data
-    console.warn('Using placeholder balance data due to API error');
     // The HTML already has placeholder values, so we don't need to change anything
 }
 

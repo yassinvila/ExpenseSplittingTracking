@@ -698,6 +698,7 @@ footer {
 /* Login Form */
 .login-form {
     max-width: 400px;
+    width: 100%;
     margin: 2rem auto;
     background: var(--light);
     padding: 2rem;
@@ -735,6 +736,11 @@ footer {
     border-left: 3px solid;
     background: var(--dark);
     transition: all 0.3s ease;
+    min-height: 0;
+}
+
+.login-message:empty {
+    display: none;
 }
 
 .login-message.success {
@@ -997,6 +1003,373 @@ footer {
     
     .modal-actions .btn {
         width: 100%;
+    }
+}
+
+/* Groups Page Styles */
+.groups-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.groups-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.group-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.group-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.group-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--primary);
+}
+
+.group-code {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--light);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.code-label {
+    color: var(--gray);
+    font-weight: 500;
+}
+
+.code-value {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: var(--primary);
+    letter-spacing: 1px;
+}
+
+.btn-copy {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: 0.25rem;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+}
+
+.btn-copy:hover {
+    background-color: var(--dark);
+}
+
+.group-description {
+    color: var(--gray);
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}
+
+.group-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.member-count {
+    color: var(--gray);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.group-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.group-actions .btn {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    min-width: auto;
+}
+
+.empty-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.empty-actions .btn {
+    min-width: 140px;
+}
+
+.error-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--error-dark);
+}
+
+.error-state p {
+    margin-bottom: 1rem;
+}
+
+/* Responsive Groups */
+@media (max-width: 768px) {
+    .groups-actions {
+        justify-content: center;
+    }
+    
+    .groups-list {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .group-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+    
+    .group-code {
+        justify-content: center;
+    }
+    
+    .group-meta {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    
+    .group-actions {
+        justify-content: center;
+    }
+    
+    .empty-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .empty-actions .btn {
+        width: 100%;
+        max-width: 200px;
+    }
+}
+
+/* Personal Page Styles */
+.personal-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.personal-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.profile-section {
+    grid-column: 1;
+}
+
+.recent-activity-section {
+    grid-column: 2;
+}
+
+.profile-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.profile-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.avatar-text {
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.profile-info h2 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.profile-info p {
+    margin: 0;
+    color: var(--gray);
+    font-size: 0.875rem;
+}
+
+.profile-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--light);
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--gray);
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.recent-activity-section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.personal-activity-item {
+    background: white;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.personal-activity-item .activity-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.personal-activity-item .activity-icon.expense {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.personal-activity-item .activity-icon.payment {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.personal-activity-item .activity-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.personal-activity-item .activity-description {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.personal-activity-item .activity-meta {
+    font-size: 0.75rem;
+    color: var(--gray);
+}
+
+.personal-activity-item .activity-amount {
+    font-weight: 600;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.personal-activity-item .activity-amount.positive {
+    color: var(--success-dark);
+}
+
+.personal-activity-item .activity-amount.negative {
+    color: var(--error-dark);
+}
+
+/* Responsive Personal Page */
+@media (max-width: 768px) {
+    .personal-content {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .profile-section,
+    .recent-activity-section {
+        grid-column: 1;
+    }
+    
+    .profile-header {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.75rem;
+    }
+    
+    .profile-stats {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    
+    .personal-actions {
+        justify-content: center;
     }
 }
 
