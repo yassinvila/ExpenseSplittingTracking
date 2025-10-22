@@ -5,6 +5,8 @@ import sqlite3
 import bcrypt
 from datetime import datetime
 import jwt
+import random
+import string
 from crud import get_net_balances, get_user_balances
 
 # instance of Flask
@@ -66,6 +68,22 @@ def generate_token(user_id):
         'exp': datetime.utcnow().timestamp() + 86400  # 24 hours
     }
     return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+
+def generate_join_code():
+    """Generate a unique 4-digit alphanumeric join code"""
+    while True:
+        # Generate 4-character code with uppercase letters and numbers
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        
+        # Check if code already exists
+        conn = get_db_connection()
+        existing = conn.execute(
+            'SELECT 1 FROM groups WHERE join_code = ?', (code,)
+        ).fetchone()
+        conn.close()
+        
+        if not existing:
+            return code
 
 # Authentication routes
 @app.route('/auth/signup', methods=['POST'])
@@ -590,12 +608,11 @@ def get_user_groups():
         
         # Get user's groups with member count
         groups_query = """
-            SELECT g.group_id, g.group_name, g.group_description, g.created_by,
+            SELECT g.group_id, g.group_name, g.group_description, g.join_code, g.created_by,
                    COUNT(m.user_id) as member_count
             FROM groups g
             JOIN members m ON g.group_id = m.group_id
             WHERE m.user_id = ? AND m.deleted_at IS NULL AND g.deleted_at IS NULL
-            GROUP BY g.group_id
             ORDER BY g.group_name
         """
         
@@ -609,6 +626,7 @@ def get_user_groups():
                 'group_id': group['group_id'],
                 'group_name': group['group_name'],
                 'group_description': group['group_description'],
+                'join_code': group['join_code'],
                 'created_by': group['created_by'],
                 'member_count': group['member_count']
             })
@@ -657,11 +675,14 @@ def create_group():
         
         conn = get_db_connection()
         
+        # Generate unique join code
+        join_code = generate_join_code()
+        
         # Create group
         now = datetime.now().isoformat()
         cursor = conn.execute(
-            'INSERT INTO groups (group_name, group_description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-            (group_name, group_description, user_id, now, now)
+            'INSERT INTO groups (group_name, group_description, join_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (group_name, group_description, join_code, user_id, now, now)
         )
         
         group_id = cursor.lastrowid
@@ -680,16 +701,95 @@ def create_group():
             'group_id': group_id,
             'group_name': group_name,
             'group_description': group_description,
+            'join_code': join_code,
             'created_by': user_id
         }), 201
         
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/api/groups/join', methods=['POST'])
+def join_group():
+    """
+    Join a group using a join code
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or not data.get('join_code'):
+            return jsonify({'error': 'Join code is required'}), 400
+        
+        join_code = data['join_code'].strip().upper()
+        
+        if len(join_code) != 4:
+            return jsonify({'error': 'Join code must be 4 characters'}), 400
+        
+        conn = get_db_connection()
+        
+        # Find group by join code
+        group = conn.execute(
+            'SELECT group_id, group_name, group_description FROM groups WHERE join_code = ? AND deleted_at IS NULL', 
+            (join_code,)
+        ).fetchone()
+        
+        if not group:
+            conn.close()
+            return jsonify({'error': 'Invalid join code'}), 404
+        
+        group_id = group['group_id']
+        
+        # Check if user is already a member
+        existing_member = conn.execute(
+            'SELECT 1 FROM members WHERE user_id = ? AND group_id = ? AND deleted_at IS NULL', 
+            (user_id, group_id)
+        ).fetchone()
+        
+        if existing_member:
+            conn.close()
+            return jsonify({'error': 'You are already a member of this group'}), 409
+        
+        # Add user to group
+        now = datetime.now().isoformat()
+        conn.execute(
+            'INSERT INTO members (user_id, group_id, joined_at) VALUES (?, ?, ?)',
+            (user_id, group_id, now)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Successfully joined group',
+            'group_id': group_id,
+            'group_name': group['group_name'],
+            'group_description': group['group_description']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
     # Run the application
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     app.run(
         host='0.0.0.0',
         port=5000,
-        debug=True
+        debug=debug_mode
     )

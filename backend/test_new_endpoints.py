@@ -59,12 +59,13 @@ def test_create_group(token):
     response = requests.post(f"{BASE_URL}/api/groups", json=group_data, headers=headers)
     
     if response.status_code == 201:
-        print("✅ Group created successfully")
-        group_id = response.json()['group_id']
-        return group_id
+        data = response.json()
+        print(f"✅ Group created successfully - Join code: {data['join_code']}")
+        group_id = data['group_id']
+        return group_id, data['join_code']
     else:
         print(f"❌ Group creation failed: {response.text}")
-        return None
+        return None, None
 
 def test_get_groups(token):
     """Test getting user groups"""
@@ -77,7 +78,7 @@ def test_get_groups(token):
         groups = response.json()['groups']
         print(f"✅ Retrieved {len(groups)} groups")
         for group in groups:
-            print(f"  - {group['group_name']} (ID: {group['group_id']})")
+            print(f"  - {group['group_name']} (ID: {group['group_id']}, Code: {group['join_code']})")
         return groups
     else:
         print(f"❌ Get groups failed: {response.text}")
@@ -136,6 +137,25 @@ def test_get_activity(token):
         print(f"❌ Get activity failed: {response.text}")
         return None
 
+def test_join_group(token, join_code):
+    """Test joining a group with join code"""
+    print(f"\nTesting join group with code: {join_code}...")
+    
+    join_data = {
+        "join_code": join_code
+    }
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.post(f"{BASE_URL}/api/groups/join", json=join_data, headers=headers)
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(f"✅ Successfully joined group: {data['group_name']}")
+        return True
+    else:
+        print(f"❌ Join group failed: {response.text}")
+        return False
+
 def main():
     print("🧪 Testing new Flask endpoints...")
     print("=" * 50)
@@ -147,7 +167,7 @@ def main():
         return
     
     # Test group creation
-    group_id = test_create_group(token)
+    group_id, join_code = test_create_group(token)
     if not group_id:
         print("❌ Group creation failed, cannot continue tests")
         return
@@ -163,6 +183,10 @@ def main():
     
     # Test getting activity
     activity = test_get_activity(token)
+    
+    # Test join group (this will fail since user is already a member)
+    print(f"\nNote: Testing join group with existing group code (will show 'already a member' error):")
+    test_join_group(token, join_code)
     
     print("\n" + "=" * 50)
     print("🎉 All tests completed!")
