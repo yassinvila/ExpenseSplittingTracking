@@ -58,3 +58,4 @@ def migrate_database():
 if __name__ == "__main__":
     print("🚀 Migrating Centsible Database...")
     migrate_database()
+
