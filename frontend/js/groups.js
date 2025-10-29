@@ -359,8 +359,19 @@ function shareGroupCode(joinCode, groupName) {
 }
 
 function viewGroupDetails(groupId) {
-    // For now, just show an alert. This could be expanded to show a detailed view
-    alert(`Group details for group ID: ${groupId}\n(This feature can be expanded to show group members, expenses, etc.)`);
+    // Get the group name from the DOM
+    const groupCard = document.querySelector(`[data-group-id="${groupId}"]`);
+    let groupName = 'Group Details';
+    
+    if (groupCard) {
+        const nameElement = groupCard.querySelector('.group-header h3');
+        if (nameElement) {
+            groupName = nameElement.textContent;
+        }
+    }
+    
+    // Navigate to group details page with the group ID and name
+    window.location.href = `group-details.html?id=${groupId}&name=${encodeURIComponent(groupName)}`;
 }
 
 function addLogoutButton() {

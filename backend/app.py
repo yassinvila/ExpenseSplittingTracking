@@ -607,12 +607,17 @@ def get_user_groups():
         conn = get_db_connection()
         
         # Get user's groups with member count
+        # First, get the groups the user is a member of
+        # Then count the members in each of those groups
         groups_query = """
             SELECT g.group_id, g.group_name, g.group_description, g.join_code, g.created_by,
-                   COUNT(m.user_id) as member_count
+                   (SELECT COUNT(*) 
+                    FROM members m2 
+                    WHERE m2.group_id = g.group_id AND m2.deleted_at IS NULL) as member_count
             FROM groups g
-            JOIN members m ON g.group_id = m.group_id
+            INNER JOIN members m ON g.group_id = m.group_id
             WHERE m.user_id = ? AND m.deleted_at IS NULL AND g.deleted_at IS NULL
+            GROUP BY g.group_id, g.group_name, g.group_description, g.join_code, g.created_by
             ORDER BY g.group_name
         """
         
@@ -780,6 +785,203 @@ def join_group():
             'group_id': group_id,
             'group_name': group['group_name'],
             'group_description': group['group_description']
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/groups/<int:group_id>/balances', methods=['GET'])
+def get_group_balances(group_id):
+    """
+    Get balance information for all members in a specific group
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = get_db_connection()
+        
+        # Verify user is a member of the group
+        membership = conn.execute(
+            'SELECT 1 FROM members WHERE user_id = ? AND group_id = ? AND deleted_at IS NULL', 
+            (user_id, group_id)
+        ).fetchone()
+        
+        if not membership:
+            conn.close()
+            return jsonify({'error': 'You are not a member of this group'}), 403
+        
+        # Get all members of the group
+        members_query = """
+            SELECT m.user_id, u.username
+            FROM members m
+            JOIN users u ON m.user_id = u.id
+            WHERE m.group_id = ? AND m.deleted_at IS NULL
+            ORDER BY u.username
+        """
+        
+        members = conn.execute(members_query, (group_id,)).fetchall()
+        
+        # Get all balances within this group
+        balances_query = """
+            SELECT b.lender, b.borrower, b.amount,
+                   u1.username as lender_name, u2.username as borrower_name
+            FROM balances b
+            JOIN users u1 ON b.lender = u1.id
+            JOIN users u2 ON b.borrower = u2.id
+            WHERE b.group_id = ? AND b.amount > 0
+            ORDER BY b.lender, b.borrower
+        """
+        
+        balances = conn.execute(balances_query, (group_id,)).fetchall()
+        
+        conn.close()
+        
+        # Calculate totals for each member
+        member_totals = {}
+        balance_details = {}  # For detailed breakdown on hover
+        
+        for member in members:
+            member_id = member['user_id']
+            member_totals[member_id] = {
+                'member_id': member_id,
+                'member_name': member['username'],
+                'owes': 0.0,
+                'is_owed': 0.0,
+                'owes_breakdown': [],  # List of {to: name, amount: X}
+                'is_owed_breakdown': []  # List of {from: name, amount: X}
+            }
+        
+        # Process balances
+        balances_list = []
+        for balance in balances:
+            lender_id = balance['lender']
+            borrower_id = balance['borrower']
+            amount = float(balance['amount'])
+            lender_name = balance['lender_name']
+            borrower_name = balance['borrower_name']
+            
+            # Track in raw format for backward compatibility
+            balances_list.append({
+                'lender_id': lender_id,
+                'lender_name': lender_name,
+                'borrower_id': borrower_id,
+                'borrower_name': borrower_name,
+                'amount': amount
+            })
+            
+            # Update borrower totals (they owe money)
+            if borrower_id in member_totals:
+                member_totals[borrower_id]['owes'] += amount
+                member_totals[borrower_id]['owes_breakdown'].append({
+                    'to': lender_name,
+                    'amount': amount
+                })
+            
+            # Update lender totals (they are owed money)
+            if lender_id in member_totals:
+                member_totals[lender_id]['is_owed'] += amount
+                member_totals[lender_id]['is_owed_breakdown'].append({
+                    'from': borrower_name,
+                    'amount': amount
+                })
+        
+        # Convert to list
+        member_list = [member_totals[mid] for mid in member_totals]
+        
+        return jsonify({
+            'group_id': group_id,
+            'balances': balances_list,
+            'members': member_list
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/groups/<int:group_id>/activity', methods=['GET'])
+def get_group_activity(group_id):
+    """
+    Get recent activity for a specific group
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = get_db_connection()
+        
+        # Verify user is a member of the group
+        membership = conn.execute(
+            'SELECT 1 FROM members WHERE user_id = ? AND group_id = ? AND deleted_at IS NULL', 
+            (user_id, group_id)
+        ).fetchone()
+        
+        if not membership:
+            conn.close()
+            return jsonify({'error': 'You are not a member of this group'}), 403
+        
+        # Get recent expenses for this group
+        expenses_query = """
+            SELECT e.expense_id, e.description, e.amount, e.paid_by, e.created_at,
+                   u.username as paid_by_name
+            FROM expenses e
+            JOIN users u ON e.paid_by = u.id
+            WHERE e.group_id = ?
+            ORDER BY e.created_at DESC
+            LIMIT 20
+        """
+        
+        expenses = conn.execute(expenses_query, (group_id,)).fetchall()
+        
+        conn.close()
+        
+        # Format activities
+        activities = []
+        
+        # Add expenses
+        for expense in expenses:
+            activities.append({
+                'id': f"expense_{expense['expense_id']}",
+                'type': 'expense',
+                'description': expense['description'],
+                'amount': float(expense['amount']),
+                'paid_by': expense['paid_by_name'],
+                'paid_by_id': expense['paid_by'],
+                'date': expense['created_at'],
+                'is_my_expense': expense['paid_by'] == user_id
+            })
+        
+        # Sort by date (most recent first)
+        activities.sort(key=lambda x: x['date'], reverse=True)
+        
+        return jsonify({
+            'group_id': group_id,
+            'activities': activities
         }), 200
         
     except Exception as e:

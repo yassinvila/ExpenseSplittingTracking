@@ -1373,3 +1373,252 @@ footer {
     }
 }
 
+/* Group Details Page Styles */
+.group-details {
+    padding-top: 6rem;
+    padding-bottom: 2rem;
+}
+
+.group-details-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.group-details-header h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.btn-back {
+    background: var(--secondary);
+    color: white;
+    border: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    font-size: 2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.btn-back:hover {
+    background: var(--primary);
+}
+
+.group-details-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    min-height: 500px;
+}
+
+.details-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.balances-panel {
+    background: #f0f4f8;
+}
+
+.activity-panel {
+    background: #e8ecf0;
+}
+
+.details-panel h2 {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.5rem;
+    color: var(--primary);
+    border-bottom: 2px solid var(--dark);
+    padding-bottom: 0.5rem;
+}
+
+.balances-list, .activity-list {
+    min-height: 300px;
+}
+
+/* Member balance items */
+.member-balance-item {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.member-balance-content {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    height: 100%;
+}
+
+.member-name {
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--primary);
+    min-width: 120px;
+    display: flex;
+    align-items: center;
+}
+
+.member-balance-divider {
+    width: 2px;
+    height: 100%;
+    background-color: var(--dark);
+    flex-shrink: 0;
+}
+
+.member-balance-values {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.balance-value-section {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.member-balance-item .balance-label {
+    font-size: 0.8rem;
+    color: var(--gray);
+    font-weight: 500;
+}
+
+.member-balance-item .balance-amount {
+    font-weight: 700;
+    font-size: 1.1rem;
+    cursor: pointer;
+    position: relative;
+}
+
+.member-balance-item .balance-amount.owes-amount {
+    color: var(--error-dark);
+}
+
+.member-balance-item .balance-amount.owed-amount {
+    color: var(--success-dark);
+}
+
+.balance-tooltip {
+    background: black;
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 300px;
+    pointer-events: none;
+}
+
+.balance-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid black;
+}
+
+.balance-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.balance-item-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--primary);
+}
+
+.balance-item-meta {
+    font-size: 0.85rem;
+    color: var(--gray);
+}
+
+.activity-item {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.activity-icon.expense {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.activity-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.activity-description {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    font-size: 0.95rem;
+}
+
+.activity-meta {
+    font-size: 0.85rem;
+    color: var(--gray);
+}
+
+.activity-amount {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--error-dark);
+}
+
+.empty-state-small {
+    text-align: center;
+    padding: 2rem;
+    color: var(--gray);
+    font-style: italic;
+}
+
+/* Responsive Group Details */
+@media (max-width: 768px) {
+    .group-details-content {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .details-panel {
+        padding: 1.5rem;
+    }
+}
+
