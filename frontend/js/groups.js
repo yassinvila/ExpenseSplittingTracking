@@ -132,9 +132,6 @@ function createGroupElement(group) {
             <div class="group-code">
                 <span class="code-label">Code:</span>
                 <span class="code-value">${group.join_code}</span>
-                <button class="btn-copy" onclick="copyJoinCode('${group.join_code}')" title="Copy join code">
-                    📋
-                </button>
             </div>
         </div>
         <p class="group-description">${group.group_description || 'No description'}</p>
@@ -142,7 +139,7 @@ function createGroupElement(group) {
             <span class="member-count">${group.member_count} member${group.member_count !== 1 ? 's' : ''}</span>
             <div class="group-actions">
                 <button class="btn btn-outline" onclick="viewGroupDetails(${group.group_id})">View Details</button>
-                <button class="btn btn-outline" onclick="shareGroupCode('${group.join_code}', '${group.group_name}')">Share Code</button>
+                <button class="btn btn-outline" onclick="shareGroupCode('${group.join_code}', '${group.group_name}', event)">Share Code</button>
             </div>
         </div>
     `;
@@ -339,23 +336,47 @@ function copyJoinCode(joinCode) {
     });
 }
 
-function shareGroupCode(joinCode, groupName) {
+function shareGroupCode(joinCode, groupName, event) {
     const shareText = `Join my group "${groupName}" on Centsible! Use code: ${joinCode}`;
+    const button = event ? event.target : null;
+    
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(shareText).then(() => {
+            // Show success checkmark
+            showCopySuccess(button);
+        }).catch(err => {
+            console.error('Failed to copy share text:', err);
+            alert(shareText);
+        });
+    };
     
     if (navigator.share) {
         navigator.share({
             title: 'Join my group on Centsible',
             text: shareText
+        }).then(() => {
+            showCopySuccess(button);
+        }).catch(() => {
+            copyToClipboard();
         });
     } else {
-        // Fallback: copy to clipboard
-        navigator.clipboard.writeText(shareText).then(() => {
-            alert('Share text copied to clipboard!');
-        }).catch(err => {
-            console.error('Failed to copy share text:', err);
-            alert(shareText);
-        });
+        copyToClipboard();
     }
+}
+
+function showCopySuccess(button) {
+    if (!button) return;
+    
+    const originalText = button.textContent;
+    button.textContent = '✓ Copied';
+    button.style.background = '#00aa00';
+    button.style.color = '#fff';
+    
+    setTimeout(() => {
+        button.textContent = originalText;
+        button.style.background = '';
+        button.style.color = '';
+    }, 500);
 }
 
 function viewGroupDetails(groupId) {

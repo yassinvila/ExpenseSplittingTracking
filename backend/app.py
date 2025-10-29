@@ -550,20 +550,51 @@ def record_payment():
         
         payment_id = cursor.lastrowid
         
-        # Update balances - reduce what the payer owes to the recipient
-        # Find existing balance where recipient is lender and payer is borrower
-        balance = conn.execute(
+        # Update balances - net out in both directions
+        # Check both possible balance directions
+        
+        # Direction 1: Payer owes recipient (paid_to is lender, user_id is borrower)
+        balance1 = conn.execute(
             'SELECT amount FROM balances WHERE lender = ? AND borrower = ?', 
             (paid_to, user_id)
         ).fetchone()
         
-        if balance:
-            current_amount = balance['amount']
+        # Direction 2: Recipient owes payer (user_id is lender, paid_to is borrower)
+        balance2 = conn.execute(
+            'SELECT amount FROM balances WHERE lender = ? AND borrower = ?', 
+            (user_id, paid_to)
+        ).fetchone()
+        
+        if balance1:
+            # Payer has an existing debt to recipient
+            current_amount = balance1['amount']
             new_amount = max(0, current_amount - amount)
+            
+            if new_amount > 0:
+                conn.execute(
+                    'UPDATE balances SET amount = ?, updated_at = ? WHERE lender = ? AND borrower = ?',
+                    (new_amount, now, paid_to, user_id)
+                )
+            else:
+                # Balance fully paid off
+                conn.execute(
+                    'DELETE FROM balances WHERE lender = ? AND borrower = ?',
+                    (paid_to, user_id)
+                )
+        elif balance2:
+            # Recipient owes the payer, payment increases this debt
+            current_amount = balance2['amount']
+            new_amount = current_amount + amount
             
             conn.execute(
                 'UPDATE balances SET amount = ?, updated_at = ? WHERE lender = ? AND borrower = ?',
-                (new_amount, now, paid_to, user_id)
+                (new_amount, now, user_id, paid_to)
+            )
+        else:
+            # No existing balance, create one where recipient owes payer
+            conn.execute(
+                'INSERT INTO balances (group_id, lender, borrower, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                (0, user_id, paid_to, amount, now, now)
             )
         
         conn.commit()
