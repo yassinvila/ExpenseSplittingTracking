@@ -1751,6 +1751,7 @@ footer {
         cursor: pointer;
         margin: 0;
         font-size: 0.875rem;
+        width: 30%;
     }
 
 /* Split details styles */
