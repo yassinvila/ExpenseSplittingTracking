@@ -298,6 +298,168 @@ def verify_token():
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/api/users/profile', methods=['PUT'])
+def update_profile():
+    """
+    Update user profile (name and email)
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # At least one field must be provided
+        if not data or (not data.get('name') and not data.get('email')):
+            return jsonify({'error': 'At least one field (name or email) must be provided'}), 400
+        
+        conn = get_db_connection()
+        
+        # Get current user data
+        current_user = conn.execute(
+            'SELECT username, email FROM users WHERE id = ?', (user_id,)
+        ).fetchone()
+        
+        if not current_user:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Prepare update values - use current values if not provided
+        name = data.get('name', '').strip() if data.get('name') else current_user['username']
+        email = data.get('email', '').strip().lower() if data.get('email') else current_user['email']
+        
+        # Validate name if provided
+        if data.get('name'):
+            if not name:
+                conn.close()
+                return jsonify({'error': 'Name cannot be empty'}), 400
+            if name == current_user['username']:
+                conn.close()
+                return jsonify({'error': 'Name must be different from current name'}), 400
+        
+        # Validate email if provided
+        if data.get('email'):
+            if '@' not in email:
+                conn.close()
+                return jsonify({'error': 'Invalid email format'}), 400
+            if email == current_user['email']:
+                conn.close()
+                return jsonify({'error': 'Email must be different from current email'}), 400
+            
+            # Check if email is already in use
+            existing_user = conn.execute(
+                'SELECT id FROM users WHERE email = ? AND id != ?', (email, user_id)
+            ).fetchone()
+            
+            if existing_user:
+                conn.close()
+                return jsonify({'error': 'Email already in use'}), 409
+        
+        # Update user profile
+        now = datetime.now().isoformat()
+        conn.execute(
+            'UPDATE users SET username = ?, email = ?, updated_at = ? WHERE id = ?',
+            (name, email, now, user_id)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Profile updated successfully',
+            'user': {
+                'id': user_id,
+                'name': name,
+                'email': email
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/users/password', methods=['PUT'])
+def update_password():
+    """
+    Update user password
+    """
+    try:
+        # Get token from Authorization header
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+        
+        token = auth_header.split(' ')[1]
+        
+        # Verify token
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or 'new_password' not in data:
+            return jsonify({'error': 'New password is required'}), 400
+        
+        new_password = data['new_password']
+        
+        # Validate password length
+        if len(new_password) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+        
+        conn = get_db_connection()
+        
+        # Get current user
+        user = conn.execute(
+            'SELECT password_hash FROM users WHERE id = ?', (user_id,)
+        ).fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Check if new password is the same as current password
+        if verify_password(new_password, user['password_hash']):
+            conn.close()
+            return jsonify({'error': 'New password must be different from current password'}), 400
+        
+        # Hash new password
+        new_password_hash = hash_password(new_password)
+        
+        # Update password
+        now = datetime.now().isoformat()
+        conn.execute(
+            'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+            (new_password_hash, now, user_id)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Password updated successfully'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/api/balance', methods=['GET'])
 def get_balance():
     """
