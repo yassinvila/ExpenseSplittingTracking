@@ -140,16 +140,59 @@ function displayActivityData(activityData) {
     });
 }
 
+function getCategoryImagePath(category) {
+    // Map category values to image file names
+    const categoryMap = {
+        'food': 'foodCategory.png',
+        'transport': 'transportationCategory.png',
+        'entertainment': 'entertainmentCategory.png',
+        'utilities': 'utilitiesCategory.png',
+        'shopping': 'shoppingCategory.png',
+        'travel': 'travelCategory.png',
+        'other': 'customCategory.png'
+    };
+    
+    // Default to customCategory if category is empty or not found
+    const imageName = categoryMap[category] || 'customCategory.png';
+    return `images/${imageName}`;
+}
+
 function createActivityElement(activity) {
     const activityItem = document.createElement('div');
     activityItem.className = 'activity-item';
     activityItem.setAttribute('data-type', activity.type);
     
     
-    // Create icon (no emoji, just text)
+    // Create icon - use category image for expenses with category, payment.png for payments, $ for expenses without category
     const icon = document.createElement('div');
     icon.className = `activity-icon ${activity.type}`;
-    icon.textContent = activity.type === 'expense' ? '$' : '$';
+    
+    if (activity.type === 'expense' && activity.category && activity.category.trim() !== '') {
+        // Create image element for expense category
+        const img = document.createElement('img');
+        img.src = getCategoryImagePath(activity.category);
+        img.alt = activity.category || 'expense';
+        img.style.width = '80%';
+        img.style.height = '80%';
+        img.style.objectFit = 'contain';
+        // Make icon container square instead of circle for images
+        icon.style.borderRadius = '4px';
+        icon.appendChild(img);
+    } else if (activity.type === 'payment') {
+        // Use payment.png image for payments
+        const img = document.createElement('img');
+        img.src = 'images/payment.png';
+        img.alt = 'payment';
+        img.style.width = '80%';
+        img.style.height = '80%';
+        img.style.objectFit = 'contain';
+        // Make icon container square instead of circle for images
+        icon.style.borderRadius = '4px';
+        icon.appendChild(img);
+    } else {
+        // Use $ sign for expenses without category
+        icon.textContent = '$';
+    }
     
     // Create content
     const content = document.createElement('div');

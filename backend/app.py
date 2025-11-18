@@ -385,7 +385,7 @@ def get_recent_activity():
         # Use LEFT JOIN with balances to check if user owes money from each expense
         placeholders = ','.join(['?' for _ in group_ids])
         expenses_query = f"""
-            SELECT e.expense_id, e.group_id, e.description, e.amount, e.paid_by, e.created_at,
+            SELECT e.expense_id, e.group_id, e.description, e.amount, e.paid_by, e.created_at, e.category,
                    u.username as paid_by_name, g.group_name,
                    CASE WHEN b.balance_id IS NOT NULL THEN 1 ELSE 0 END as user_owes
             FROM expenses e
@@ -437,6 +437,7 @@ def get_recent_activity():
                 'group_name': expense['group_name'],
                 'group_id': expense['group_id'],
                 'date': expense['created_at'],
+                'category': expense['category'] or '',
                 'is_my_expense': is_paid_by_me,
                 'is_involved': is_involved
             })
@@ -1148,7 +1149,7 @@ def get_group_activity(group_id):
         
         # Get recent expenses for this group
         expenses_query = """
-            SELECT e.expense_id, e.description, e.amount, e.paid_by, e.created_at,
+            SELECT e.expense_id, e.description, e.amount, e.paid_by, e.created_at, e.category,
                    u.username as paid_by_name
             FROM expenses e
             JOIN users u ON e.paid_by = u.id
@@ -1188,6 +1189,7 @@ def get_group_activity(group_id):
                 'paid_by': expense['paid_by_name'],
                 'paid_by_id': expense['paid_by'],
                 'date': expense['created_at'],
+                'category': expense['category'] or '',
                 'is_my_expense': expense['paid_by'] == user_id
             })
         

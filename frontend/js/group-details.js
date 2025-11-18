@@ -256,6 +256,24 @@ function displayActivity(activities) {
     });
 }
 
+function getCategoryImagePath(category) {
+    // Map category values to image file names
+    const categoryMap = {
+        'food': 'foodCategory.png',
+        'transport': 'transportationCategory.png',
+        'transportation': 'transportationCategory.png',
+        'entertainment': 'entertainmentCategory.png',
+        'utilities': 'utilitiesCategory.png',
+        'shopping': 'shoppingCategory.png',
+        'travel': 'travelCategory.png',
+        'other': 'customCategory.png'
+    };
+    
+    // Default to customCategory if category is empty or not found
+    const imageName = categoryMap[category] || 'customCategory.png';
+    return `images/${imageName}`;
+}
+
 function createActivityElement(activity) {
     const element = document.createElement('div');
     element.className = 'activity-item';
@@ -276,14 +294,55 @@ function createActivityElement(activity) {
         meta = `${formattedDate}`;
     }
     
-    element.innerHTML = `
-        <div class="activity-icon ${activity.type}">${activity.type === 'expense' ? '💰' : '💵'}</div>
-        <div class="activity-content">
-            <div class="activity-description">${description}</div>
-            <div class="activity-meta">${meta}</div>
-        </div>
-        <div class="activity-amount">$${activity.amount.toFixed(2)}</div>
+    // Create icon element
+    const icon = document.createElement('div');
+    icon.className = `activity-icon ${activity.type}`;
+    
+    if (activity.type === 'expense' && activity.category && activity.category.trim() !== '') {
+        // Create image element for expense category
+        const img = document.createElement('img');
+        const imagePath = getCategoryImagePath(activity.category);
+        img.src = imagePath;
+        img.alt = activity.category || 'expense';
+        img.onerror = function() {
+            // Fallback to $ if image fails to load
+            icon.innerHTML = '';
+            icon.textContent = '$';
+        };
+        icon.appendChild(img);
+    } else if (activity.type === 'payment') {
+        // Use payment.png image for payments
+        const img = document.createElement('img');
+        img.src = 'images/payment.png';
+        img.alt = 'payment';
+        img.onerror = function() {
+            // Fallback to emoji if image fails to load
+            icon.innerHTML = '';
+            icon.textContent = '💵';
+        };
+        icon.appendChild(img);
+    } else {
+        // Use $ sign for expenses without category
+        icon.textContent = '$';
+    }
+    
+    // Create content
+    const content = document.createElement('div');
+    content.className = 'activity-content';
+    content.innerHTML = `
+        <div class="activity-description">${description}</div>
+        <div class="activity-meta">${meta}</div>
     `;
+    
+    // Create amount
+    const amount = document.createElement('div');
+    amount.className = 'activity-amount';
+    amount.textContent = `$${activity.amount.toFixed(2)}`;
+    
+    // Append all elements
+    element.appendChild(icon);
+    element.appendChild(content);
+    element.appendChild(amount);
     
     return element;
 }

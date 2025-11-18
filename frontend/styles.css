@@ -1623,6 +1623,17 @@ footer {
         color: #1976d2;
     }
 
+    .activity-icon.payment {
+        background: #e8f5e8;
+        color: #2d5a2d;
+    }
+
+    .activity-icon img {
+        width: 80%;
+        height: 80%;
+        object-fit: contain;
+    }
+
 .activity-content {
     flex: 1;
     min-width: 0;
