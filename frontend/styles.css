@@ -1214,29 +1214,12 @@ footer {
 }
 
 /* Personal Page Styles */
-.personal-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 2rem;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
 .personal-content {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
     margin-bottom: 2rem;
 }
 
 .profile-section {
-    grid-column: 1;
-    display: flex;
-    justify-content: center;
-}
-
-.recent-activity-section {
-    grid-column: 2;
+    width: 100%;
 }
 
 .profile-card {
@@ -1245,7 +1228,7 @@ footer {
     padding: 1.5rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     width: 100%;
-    max-width: 400px;
+    margin-bottom: 0;
 }
 
 .profile-header {
@@ -1296,6 +1279,8 @@ footer {
     gap: 1rem;
     padding-top: 1rem;
     border-top: 1px solid var(--light);
+    margin-bottom: 0;
+    padding-bottom: 0;
 }
 
 .stat-item {
@@ -1318,87 +1303,70 @@ footer {
     color: var(--primary);
 }
 
-.recent-activity-section h3 {
-    margin: 0 0 1rem 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+/* Profile Forms Styles */
+.profile-forms {
+    margin-top: 2rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2rem;
 }
 
-.personal-activity-item {
+.profile-form-section {
     background: white;
-    border-radius: 6px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-    .personal-activity-item .activity-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.875rem;
-        font-weight: 600;
-        flex-shrink: 0;
+.form-section-title {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--primary);
+    border-bottom: 1px solid var(--light);
+    padding-bottom: 0.75rem;
+}
+
+.inline-form {
+    width: 100%;
+}
+
+.inline-form .form-group {
+    margin-bottom: 1.5rem;
+}
+
+.inline-form .form-group:last-of-type {
+    margin-bottom: 0;
+}
+
+.inline-form input.error,
+.inline-form select.error {
+    border-color: var(--error-dark);
+    box-shadow: 0 0 0 2px rgba(139, 0, 0, 0.1);
+}
+
+.error-message {
+    display: none;
+    color: var(--error-dark);
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+    font-weight: 500;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--light);
+}
+
+    .form-actions .btn {
+        min-width: 120px;
     }
-
-        .personal-activity-item .activity-icon.expense {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-
-        .personal-activity-item .activity-icon.payment {
-            background: #f3e5f5;
-            color: #7b1fa2;
-        }
-
-    .personal-activity-item .activity-content {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .personal-activity-item .activity-description {
-        font-size: 0.875rem;
-        font-weight: 500;
-        margin-bottom: 0.25rem;
-    }
-
-    .personal-activity-item .activity-meta {
-        font-size: 0.75rem;
-        color: var(--gray);
-    }
-
-    .personal-activity-item .activity-amount {
-        font-weight: 600;
-        font-size: 0.875rem;
-        flex-shrink: 0;
-    }
-
-        .personal-activity-item .activity-amount.positive {
-            color: var(--success-dark);
-        }
-
-        .personal-activity-item .activity-amount.negative {
-            color: var(--error-dark);
-        }
 
 /* Responsive Personal Page */
 @media (max-width: 768px) {
-    .personal-content {
-        grid-template-columns: 1fr;
-        gap: 1.5rem;
-    }
-
-    .profile-section,
-    .recent-activity-section {
-        grid-column: 1;
-    }
-
     .profile-header {
         flex-direction: column;
         text-align: center;
@@ -1410,8 +1378,9 @@ footer {
         gap: 0.75rem;
     }
 
-    .personal-actions {
-        justify-content: center;
+    .profile-forms {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
     }
 }
 
