@@ -1959,6 +1959,9 @@ body.dark-mode .subnav-link.active{
 body.dark-mode .modal-header{
     background-color: #2a2a2a;
 }
+body.dark-mode #addCurrencyType {
+    color: #000000; /* Color for currency prefix */
+}
 
 /*Recent Activity*/
 body.dark-mode .activity,
@@ -1970,4 +1973,8 @@ body.dark-mode .activity-list.activity-list{
 /* Groups */
 body.dark-mode .group-card{
     background-color: #2a2a2a;
+}
+
+body.dark-mode .profile-card{
+    background-color: #8B8B8B;
 }
