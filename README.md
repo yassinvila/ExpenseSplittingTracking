@@ -31,6 +31,14 @@ For node, in WSL or linux equivalent, enter:
 ```
 or install it through instructions on the official website, linked above.
 
+### Receipt OCR & Attachments
+- Install system binaries so PDF/image OCR works:
+  ```
+  sudo apt install tesseract-ocr poppler-utils
+  ```
+- Install new backend dependencies (pytesseract, pdf2image, Pillow) with `pip install -r backend/requirements.txt`.
+- Uploaded files are stored under `backend/uploads/expenses/<expense_id>/`. When you're ready to switch to cloud storage, only the upload helper in `backend/app.py` needs to change.
+
 ## Minimum Viable Product Goals:
 	- Account Registration
 	- Automatic Balance Calculation
