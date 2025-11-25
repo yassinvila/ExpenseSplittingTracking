@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory, url_for
 from flask_cors import CORS
 import os
 import sqlite3
@@ -7,7 +7,32 @@ from datetime import datetime
 import jwt
 import random
 import string
+import json
+import mimetypes
+from uuid import uuid4
 from collections import defaultdict
+import re
+import tempfile
+from werkzeug.utils import secure_filename
+from PIL import Image
+
+try:
+    import easyocr
+    import numpy as np
+    # Initialize easyOCR reader once at module level (first use downloads models)
+    try:
+        ocr_reader = easyocr.Reader(['en'])
+    except Exception:
+        ocr_reader = None
+except ImportError:
+    easyocr = None
+    ocr_reader = None
+
+try:
+    from pdf2image import convert_from_path
+except ImportError:
+    convert_from_path = None
+
 from crud import get_net_balances, get_user_balances
 from splitting import compute_custom_splits, SplitError
 
@@ -19,6 +44,28 @@ CORS(app)
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_ROOT = os.path.join(BASE_DIR, 'uploads')
+ALLOWED_ATTACHMENT_EXTENSIONS = {
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'heic', 'heif', 'pdf'
+}
+RECEIPT_KEYWORDS = [
+    'total amount',
+    'grand total',
+    'balance due',
+    'amount due',
+    'net total',
+    'final amount',
+    'payable amount',
+    'total'
+]
+# Words to exclude - these are intermediate totals, not final totals
+EXCLUDE_KEYWORDS = [
+    'subtotal',
+    'sub-total',
+    'sub total'
+]
+os.makedirs(UPLOAD_ROOT, exist_ok=True)
 
 @app.route('/ping', methods=['GET'])
 def health_check():
@@ -49,11 +96,208 @@ def home():
         }
     }), 200
 
+
+@app.route('/uploads/<path:filename>', methods=['GET'])
+def serve_upload(filename):
+    """Serve uploaded attachments."""
+    return send_from_directory(UPLOAD_ROOT, filename, as_attachment=False)
+
 # Database helper functions
 def get_db_connection():
     conn = sqlite3.connect('test.db')
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def ensure_expense_attachment_table():
+    """Ensure the attachment table exists for older databases."""
+    conn = get_db_connection()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS expense_attachments (
+            attachment_id INTEGER PRIMARY KEY NOT NULL,
+            expense_id INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            original_filename TEXT,
+            mime_type TEXT,
+            is_receipt INTEGER DEFAULT 0,
+            ocr_total NUMERIC,
+            created_at TEXT,
+            FOREIGN KEY (expense_id) REFERENCES expenses(expense_id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+ensure_expense_attachment_table()
+
+
+def allowed_attachment(filename):
+    return (
+        bool(filename)
+        and '.' in filename
+        and filename.rsplit('.', 1)[1].lower() in ALLOWED_ATTACHMENT_EXTENSIONS
+    )
+
+
+def extract_amount_from_line(line):
+    """Extract decimal amount from a string."""
+    if not line:
+        return None
+    matches = re.findall(r'(-?\d[\d,]*(?:\.\d{1,2})?)', line.replace(',', ''))
+    for match in matches:
+        try:
+            value = float(match)
+            if value >= 0:
+                return round(value, 2)
+        except ValueError:
+            continue
+    return None
+
+
+def find_total_amount_in_text(text):
+    """Search multiline text for keywords and return the amount next to them."""
+    if not text:
+        return None
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for idx, raw_line in enumerate(lines):
+        line = raw_line.lower()
+        # Skip lines that contain excluded keywords (like subtotal)
+        if any(exclude_word in line for exclude_word in EXCLUDE_KEYWORDS):
+            continue
+        for keyword in RECEIPT_KEYWORDS:
+            if keyword in line:
+                amount = extract_amount_from_line(raw_line)
+                if amount is not None:
+                    return amount
+                if idx + 1 < len(lines):
+                    next_amount = extract_amount_from_line(lines[idx + 1])
+                    if next_amount is not None:
+                        return next_amount
+    return None
+
+
+def run_receipt_ocr(file_path):
+    """Run OCR against a receipt file and try to detect the total amount."""
+    if ocr_reader is None:
+        return None, 'OCR is unavailable (easyocr not installed)'
+    text_chunks = []
+    try:
+        if file_path.lower().endswith('.pdf'):
+            if convert_from_path is None:
+                return None, 'PDF OCR requires pdf2image; please install it.'
+            images = convert_from_path(file_path, fmt='png', first_page=1, last_page=1)
+            for image in images:
+                # Convert PIL Image to numpy array for easyOCR
+                img_array = np.array(image)
+                # easyOCR returns [(bbox, text, confidence), ...], extract text (index 1)
+                results = ocr_reader.readtext(img_array)
+                text = '\n'.join([result[1] for result in results])
+                text_chunks.append(text)
+        else:
+            with Image.open(file_path) as img:
+                # Convert PIL Image to numpy array for easyOCR
+                img_array = np.array(img)
+                # easyOCR returns [(bbox, text, confidence), ...], extract text (index 1)
+                results = ocr_reader.readtext(img_array)
+                text = '\n'.join([result[1] for result in results])
+                text_chunks.append(text)
+    except Exception as exc:
+        return None, f'OCR failed: {exc}'
+
+    combined_text = '\n'.join(text_chunks)
+    amount = find_total_amount_in_text(combined_text)
+    if amount is None:
+        return None, 'Could not find a recognizable total on the receipt.'
+    return amount, None
+
+
+def save_attachment_file(expense_id, file_storage):
+    """Persist attachment to disk and return metadata dict."""
+    original_name = secure_filename(file_storage.filename or '')
+    extension = os.path.splitext(original_name)[1]
+    unique_name = f"{uuid4().hex}{extension}"
+    expense_dir = os.path.join(UPLOAD_ROOT, 'expenses', str(expense_id))
+    os.makedirs(expense_dir, exist_ok=True)
+    destination = os.path.join(expense_dir, unique_name)
+    file_storage.save(destination)
+    relative_path = os.path.relpath(destination, UPLOAD_ROOT)
+    mime_type = file_storage.mimetype or mimetypes.guess_type(original_name)[0] or 'application/octet-stream'
+    return {
+        'relative_path': relative_path.replace('\\', '/'),
+        'mime_type': mime_type,
+        'original_name': original_name or unique_name,
+        'absolute_path': destination
+    }
+
+
+def parse_json_field(raw_value, default_value):
+    """Parse JSON arrays/objects coming from multipart forms."""
+    if raw_value in (None, '', 'null', 'undefined'):
+        return default_value
+    try:
+        return json.loads(raw_value)
+    except (json.JSONDecodeError, TypeError):
+        return default_value
+
+
+def extract_expense_payload():
+    """Normalize payload from JSON or multipart forms."""
+    content_type = request.content_type or ''
+    is_multipart = 'multipart/form-data' in content_type
+    attachment_file = request.files.get('attachment') if is_multipart else None
+    if is_multipart:
+        form = request.form
+        payload = {
+            'amount': form.get('amount'),
+            'description': form.get('description'),
+            'group_id': form.get('group_id'),
+            'paid_by': form.get('paid_by'),
+            'split_method': form.get('split_method'),
+            'participants': parse_json_field(form.get('participants'), []),
+            'split_details': parse_json_field(form.get('split_details'), {}),
+            'split_config': parse_json_field(form.get('split_config'), []),
+            'note': form.get('note', ''),
+            'date': form.get('date'),
+            'category': form.get('category'),
+            'currency': form.get('currency'),
+            'is_receipt_attachment': form.get('is_receipt_attachment', 'false').lower() == 'true',
+            'attachment_ocr_total': form.get('ocr_total')
+        }
+    else:
+        payload = request.get_json() or {}
+        payload.setdefault('participants', [])
+        payload.setdefault('split_details', {})
+        payload.setdefault('split_config', [])
+        payload.setdefault('note', '')
+        payload.setdefault('currency', 'USD')
+        payload['is_receipt_attachment'] = bool(payload.get('is_receipt_attachment'))
+        payload['attachment_ocr_total'] = payload.get('attachment_ocr_total')
+    # Normalize OCR total
+    raw_total = payload.get('attachment_ocr_total')
+    if raw_total in (None, '', 'null', 'undefined'):
+        payload['attachment_ocr_total'] = None
+    else:
+        try:
+            payload['attachment_ocr_total'] = float(raw_total)
+        except (TypeError, ValueError):
+            payload['attachment_ocr_total'] = None
+
+    return payload, attachment_file
+
+
+def map_attachment_row(row):
+    """Convert DB attachment row to API-friendly payload."""
+    return {
+        'attachment_id': row['attachment_id'],
+        'file_name': row['original_filename'],
+        'mime_type': row['mime_type'],
+        'is_receipt': bool(row['is_receipt']),
+        'ocr_total': float(row['ocr_total']) if row['ocr_total'] is not None else None,
+        'url': url_for('serve_upload', filename=row['file_path'], _external=True)
+    }
 
 def hash_password(password):
     """Hash a password using bcrypt"""
@@ -583,6 +827,7 @@ def get_recent_activity():
         payments = conn.execute(payments_query, [user_id, user_id] + group_ids).fetchall()
         
         expense_splits_map = defaultdict(list)
+        expense_attachments_map = defaultdict(list)
         if expenses:
             expense_ids = [expense['expense_id'] for expense in expenses]
             placeholders_expenses = ','.join(['?' for _ in expense_ids])
@@ -603,6 +848,16 @@ def get_recent_activity():
                     'amount': float(split['amount']),
                     'status': status
                 })
+            
+            attachments_query = f"""
+                SELECT attachment_id, expense_id, file_path, original_filename, mime_type, is_receipt, ocr_total
+                FROM expense_attachments
+                WHERE expense_id IN ({placeholders_expenses})
+                ORDER BY created_at DESC
+            """
+            attachment_rows = conn.execute(attachments_query, expense_ids).fetchall()
+            for attachment in attachment_rows:
+                expense_attachments_map[attachment['expense_id']].append(map_attachment_row(attachment))
         
         conn.close()
         
@@ -629,7 +884,8 @@ def get_recent_activity():
                 'is_involved': is_involved,
                 'memo': expense['note'] or '',
                 'split_method': expense['split_method'] or '',
-                'splits': expense_splits_map.get(expense['expense_id'], [])
+                'splits': expense_splits_map.get(expense['expense_id'], []),
+                'attachments': expense_attachments_map.get(expense['expense_id'], [])
             })
         
         # Add payments
@@ -649,7 +905,8 @@ def get_recent_activity():
                 'is_my_payment': payment['paid_by'] == user_id,
                 'is_paid_to_me': payment['paid_to'] == user_id,
                 'memo': '',
-                'splits': []
+                'splits': [],
+                'attachments': []
             })
         
         # Sort all activities by date (most recent first)
@@ -688,7 +945,7 @@ def add_expense():
         except jwt.InvalidTokenError:
             return jsonify({'error': 'Invalid token'}), 401
         
-        data = request.get_json()
+        data, attachment_file = extract_expense_payload()
         
         # Validate required fields
         required_fields = ['amount', 'description', 'group_id', 'paid_by', 'split_method', 'participants', 'split_details']
@@ -712,10 +969,12 @@ def add_expense():
             return jsonify({'error': 'Participants must be numeric user IDs'}), 400
         
         # Optional fields
-        note = data.get('note', '').strip()
+        note = (data.get('note') or '').strip()
         date = data.get('date', '')
         category = data.get('category', '')
-        currency = data.get('currency', 'USD')
+        currency = data.get('currency') or 'USD'
+        is_receipt_attachment = bool(data.get('is_receipt_attachment'))
+        ocr_total_from_client = data.get('attachment_ocr_total')
         
         # Validate amount
         if amount <= 0:
@@ -850,6 +1109,43 @@ def add_expense():
                 'INSERT INTO expense_splits (expense_id, user_id, amount, status, created_at) VALUES (?, ?, ?, ?, ?)',
                 split_rows
             )
+
+        attachment_response = None
+        if attachment_file and attachment_file.filename:
+            if not allowed_attachment(attachment_file.filename):
+                conn.close()
+                return jsonify({'error': 'Unsupported attachment type. Please upload an image or PDF file.'}), 400
+
+            metadata = save_attachment_file(expense_id, attachment_file)
+            ocr_detected = ocr_total_from_client
+            ocr_error = None
+
+            if is_receipt_attachment and ocr_detected is None:
+                ocr_detected, ocr_error = run_receipt_ocr(metadata['absolute_path'])
+
+            attachment_cursor = conn.execute(
+                'INSERT INTO expense_attachments (expense_id, file_path, original_filename, mime_type, is_receipt, ocr_total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (
+                    expense_id,
+                    metadata['relative_path'],
+                    metadata['original_name'],
+                    metadata['mime_type'],
+                    1 if is_receipt_attachment else 0,
+                    ocr_detected,
+                    now
+                )
+            )
+
+            attachment_response = {
+                'attachment_id': attachment_cursor.lastrowid,
+                'file_name': metadata['original_name'],
+                'mime_type': metadata['mime_type'],
+                'is_receipt': is_receipt_attachment,
+                'ocr_total': ocr_detected,
+                'url': url_for('serve_upload', filename=metadata['relative_path'], _external=True)
+            }
+            if ocr_error:
+                attachment_response['ocr_error'] = ocr_error
         
         conn.commit()
         conn.close()
@@ -862,13 +1158,65 @@ def add_expense():
             'group_id': group_id,
             'paid_by': paid_by,
             'split_method': split_method,
-            'note': note
+            'note': note,
+            'attachment': attachment_response
         }), 201
         
     except ValueError as e:
         return jsonify({'error': f'Invalid data format: {str(e)}'}), 400
     except Exception as e:
         print(f"Error in add_expense: {str(e)}")  # Add logging for debugging
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@app.route('/api/expenses/receipt-total', methods=['POST'])
+def analyze_receipt_total():
+    """
+    Run OCR against an uploaded receipt and return the detected total.
+    """
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Authorization token required'}), 401
+
+        token = auth_header.split(' ')[1]
+
+        try:
+            jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        file = request.files.get('receipt')
+        is_receipt_flag = request.form.get('is_receipt', 'true').lower() == 'true'
+
+        if not file or not file.filename:
+            return jsonify({'error': 'Receipt file is required'}), 400
+
+        if not allowed_attachment(file.filename):
+            return jsonify({'error': 'Unsupported file type. Upload an image or PDF.'}), 400
+
+        temp_suffix = os.path.splitext(secure_filename(file.filename))[1] or '.tmp'
+        temp_dir = os.path.join(UPLOAD_ROOT, 'tmp')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix, dir=temp_dir) as tmp:
+                file.save(tmp.name)
+                temp_path = tmp.name
+
+            detected_total, error = run_receipt_ocr(temp_path) if is_receipt_flag else (None, 'Not marked as receipt')
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        if error or detected_total is None:
+            return jsonify({'error': error or 'Unable to detect a total'}), 422
+
+        return jsonify({'detected_total': detected_total}), 200
+    except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @app.route('/api/payments', methods=['POST'])
@@ -1443,6 +1791,7 @@ def get_group_activity(group_id):
         payments = conn.execute(payments_query, (group_id,)).fetchall()
         
         expense_splits_map = defaultdict(list)
+        expense_attachments_map = defaultdict(list)
         if expenses:
             expense_ids = [expense['expense_id'] for expense in expenses]
             placeholders_expenses = ','.join(['?' for _ in expense_ids])
@@ -1463,6 +1812,16 @@ def get_group_activity(group_id):
                     'amount': float(split['amount']),
                     'status': status
                 })
+            
+            attachments_query = f"""
+                SELECT attachment_id, expense_id, file_path, original_filename, mime_type, is_receipt, ocr_total
+                FROM expense_attachments
+                WHERE expense_id IN ({placeholders_expenses})
+                ORDER BY created_at DESC
+            """
+            attachment_rows = conn.execute(attachments_query, expense_ids).fetchall()
+            for attachment in attachment_rows:
+                expense_attachments_map[attachment['expense_id']].append(map_attachment_row(attachment))
         
         conn.close()
         
@@ -1483,7 +1842,8 @@ def get_group_activity(group_id):
                 'is_my_expense': expense['paid_by'] == user_id,
                 'memo': expense['note'] or '',
                 'split_method': expense['split_method'] or '',
-                'splits': expense_splits_map.get(expense['expense_id'], [])
+                'splits': expense_splits_map.get(expense['expense_id'], []),
+                'attachments': expense_attachments_map.get(expense['expense_id'], [])
             })
         
         # Add payments
@@ -1501,7 +1861,8 @@ def get_group_activity(group_id):
                 'is_my_payment': payment['paid_by'] == user_id,
                 'is_paid_to_me': payment['paid_to'] == user_id,
                 'memo': '',
-                'splits': []
+                'splits': [],
+                'attachments': []
             })
         
         # Sort by date (most recent first)
