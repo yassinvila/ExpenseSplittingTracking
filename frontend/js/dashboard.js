@@ -59,6 +59,9 @@ async function checkAuthentication() {
         // Load groups data
         loadGroupsData();
         
+        // Load unpaid expenses alerts
+        loadUnpaidExpenses();
+        
     } catch (error) {
         console.error('Authentication check failed:', error);
         // On network error, allow user to stay but show warning
@@ -1125,6 +1128,8 @@ async function handleAddExpense() {
             alert('Expense added successfully!');
             // Reload balance data to reflect the new expense
             loadBalanceData();
+            // Reload unpaid expenses
+            loadUnpaidExpenses();
         } else {
             alert(`Error: ${data.error}`);
         }
@@ -1194,12 +1199,196 @@ async function handleSettleExpense() {
             alert('Payment recorded successfully!');
             // Reload balance data to reflect the payment
             loadBalanceData();
+            // Reload unpaid expenses
+            loadUnpaidExpenses();
         } else {
             alert(`Error: ${data.error}`);
         }
     } catch (error) {
         console.error('Failed to record payment:', error);
         alert('Failed to record payment. Please try again.');
+    }
+}
+
+// Unpaid expenses functionality
+async function loadUnpaidExpenses() {
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+        console.error('No authentication token available');
+        return;
+    }
+    
+    try {
+        const response = await fetch('http://localhost:5000/api/unpaid-expenses', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API Error Response:', errorText);
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        displayUnpaidExpenses(data);
+        
+    } catch (error) {
+        console.error('Failed to load unpaid expenses:', error);
+        // Hide the container on error
+        const container = document.getElementById('unpaid-expenses-alerts');
+        if (container) {
+            container.style.display = 'none';
+        }
+    }
+}
+
+function displayUnpaidExpenses(data) {
+    const container = document.getElementById('unpaid-expenses-alerts');
+    
+    if (!container) {
+        console.error('Unpaid expenses container not found');
+        return;
+    }
+    
+    if (!data.unpaid_expenses || data.unpaid_expenses.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    // Show container
+    container.style.display = 'block';
+    
+    // Ensure header exists (it should be in HTML, but create if missing)
+    let header = container.querySelector('.unpaid-expenses-header');
+    if (!header) {
+        header = document.createElement('div');
+        header.className = 'unpaid-expenses-header';
+        const title = document.createElement('h2');
+        title.className = 'unpaid-expenses-title';
+        title.textContent = 'Warning! It has been more than 2 days and...';
+        header.appendChild(title);
+        container.insertBefore(header, container.firstChild);
+    }
+    
+    // Find or create the list container
+    let listContainer = container.querySelector('.unpaid-expenses-list');
+    if (!listContainer) {
+        listContainer = document.createElement('div');
+        listContainer.className = 'unpaid-expenses-list';
+        container.appendChild(listContainer);
+    }
+    
+    // Clear existing content in list only (preserve header)
+    listContainer.innerHTML = '';
+    
+    // Create alert items for each lender
+    data.unpaid_expenses.forEach((lenderData) => {
+        const item = createUnpaidExpenseItem(lenderData);
+        listContainer.appendChild(item);
+    });
+}
+
+function createUnpaidExpenseItem(lenderData) {
+    const item = document.createElement('div');
+    item.className = 'unpaid-expense-item';
+    item.setAttribute('tabindex', '0');
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'unpaid-expense-header';
+    
+    // Content
+    const content = document.createElement('div');
+    content.className = 'unpaid-expense-content';
+    
+    const description = document.createElement('div');
+    description.className = 'unpaid-expense-description';
+    description.textContent = `You still owe ${lenderData.lender_name}`;
+    
+    content.appendChild(description);
+    
+    // Amount
+    const amount = document.createElement('div');
+    amount.className = 'unpaid-expense-amount';
+    amount.textContent = `$${lenderData.total_amount.toFixed(2)}`;
+    
+    // Toggle button
+    const toggleButton = document.createElement('button');
+    toggleButton.className = 'unpaid-expense-toggle';
+    toggleButton.setAttribute('aria-label', 'Toggle expense details');
+    toggleButton.setAttribute('aria-expanded', 'false');
+    toggleButton.innerHTML = `
+        <span class="chevron"></span>
+    `;
+    
+    header.appendChild(content);
+    header.appendChild(amount);
+    header.appendChild(toggleButton);
+    
+    // Details
+    const details = document.createElement('div');
+    details.className = 'unpaid-expense-details';
+    details.setAttribute('aria-hidden', 'true');
+    
+    // Add individual expense details
+    lenderData.expenses.forEach((expense) => {
+        const detailItem = document.createElement('div');
+        detailItem.className = 'unpaid-expense-detail-item';
+        
+        const detailText = document.createElement('div');
+        detailText.className = 'unpaid-expense-detail-text';
+        detailText.textContent = `You owe ${lenderData.lender_name} $${expense.amount.toFixed(2)} for ${expense.description} in ${expense.group_name}`;
+        
+        const detailAmount = document.createElement('div');
+        detailAmount.className = 'unpaid-expense-detail-amount';
+        detailAmount.textContent = `$${expense.amount.toFixed(2)}`;
+        
+        detailItem.appendChild(detailText);
+        detailItem.appendChild(detailAmount);
+        details.appendChild(detailItem);
+    });
+    
+    item.appendChild(header);
+    item.appendChild(details);
+    
+    // Event handlers
+    toggleButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleUnpaidExpenseDetails(item);
+    });
+    
+    item.addEventListener('click', (event) => {
+        if (event.target.closest('.unpaid-expense-details')) {
+            return;
+        }
+        toggleUnpaidExpenseDetails(item);
+    });
+    
+    item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleUnpaidExpenseDetails(item);
+        }
+    });
+    
+    return item;
+}
+
+function toggleUnpaidExpenseDetails(item) {
+    const isExpanded = item.classList.toggle('expanded');
+    const details = item.querySelector('.unpaid-expense-details');
+    const toggleButton = item.querySelector('.unpaid-expense-toggle');
+    
+    if (details) {
+        details.setAttribute('aria-hidden', String(!isExpanded));
+    }
+    if (toggleButton) {
+        toggleButton.setAttribute('aria-expanded', String(isExpanded));
     }
 }
 
