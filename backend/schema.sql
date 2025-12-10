@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS expense_attachments (
     mime_type TEXT,
     is_receipt INTEGER DEFAULT 0,
     ocr_total NUMERIC,
+    ocr_confidence NUMERIC,
     created_at TEXT,
     FOREIGN KEY (expense_id) REFERENCES expenses(expense_id) ON DELETE CASCADE
 );

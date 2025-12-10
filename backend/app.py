@@ -16,17 +16,10 @@ import tempfile
 from werkzeug.utils import secure_filename
 from PIL import Image
 
-try:
-    import easyocr
-    import numpy as np
-    # Initialize easyOCR reader once at module level (first use downloads models)
-    try:
-        ocr_reader = easyocr.Reader(['en'])
-    except Exception:
-        ocr_reader = None
-except ImportError:
-    easyocr = None
-    ocr_reader = None
+# Defer importing heavy OCR dependencies until actually needed by the OCR routine
+ocr = None
+np = None
+ocr_reader = None
 
 try:
     from pdf2image import convert_from_path
@@ -157,61 +150,130 @@ def extract_amount_from_line(line):
     return None
 
 
-def find_total_amount_in_text(text):
-    """Search multiline text for keywords and return the amount next to them."""
+def find_all_amounts_in_text(text):
+    """Extract all amounts found in text and return them sorted by likelihood."""
     if not text:
-        return None
+        return []
+    
+    amounts_with_confidence = []
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    
+    # First pass: amounts near receipt keywords (highest priority)
     for idx, raw_line in enumerate(lines):
         line = raw_line.lower()
-        # Skip lines that contain excluded keywords (like subtotal)
         if any(exclude_word in line for exclude_word in EXCLUDE_KEYWORDS):
             continue
         for keyword in RECEIPT_KEYWORDS:
             if keyword in line:
                 amount = extract_amount_from_line(raw_line)
                 if amount is not None:
-                    return amount
+                    amounts_with_confidence.append((amount, 3))  # Priority 3 (highest)
                 if idx + 1 < len(lines):
                     next_amount = extract_amount_from_line(lines[idx + 1])
                     if next_amount is not None:
-                        return next_amount
-    return None
+                        amounts_with_confidence.append((next_amount, 3))
+    
+    # Second pass: all other amounts in the document
+    for line in lines:
+        line_lower = line.lower()
+        if any(exclude_word in line_lower for exclude_word in EXCLUDE_KEYWORDS):
+            continue
+        # Skip lines already matched with keywords
+        if not any(keyword in line_lower for keyword in RECEIPT_KEYWORDS):
+            amount = extract_amount_from_line(line)
+            if amount is not None and amount not in [a[0] for a in amounts_with_confidence]:
+                amounts_with_confidence.append((amount, 1))  # Priority 1 (lower)
+    
+    # Sort by priority descending, then by amount descending (larger amounts more likely to be total)
+    amounts_with_confidence.sort(key=lambda x: (-x[1], -x[0]))
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_amounts = []
+    for amount, priority in amounts_with_confidence:
+        if amount not in seen:
+            seen.add(amount)
+            unique_amounts.append(amount)
+    
+    return unique_amounts[:10]  # Return top 10 candidates
+
+
+def find_total_amount_in_text(text):
+    """Search multiline text for keywords and return the amount next to them."""
+    candidates = find_all_amounts_in_text(text)
+    return candidates[0] if candidates else None
 
 
 def run_receipt_ocr(file_path):
-    """Run OCR against a receipt file and try to detect the total amount."""
+    """Run OCR against a receipt file and try to detect the total amount and confidence."""
+    # Import heavy OCR libraries only when OCR is actually requested
+    global ocr_reader, ocr, np
+    try:
+        import easyocr as _ocr
+        import numpy as _np
+    except ImportError:
+        return None, None, 'OCR is unavailable (easyocr not installed)'
+
+    ocr = _ocr
+    np = _np
+
+    # Initialize the ocr Reader lazily
     if ocr_reader is None:
-        return None, 'OCR is unavailable (easyocr not installed)'
-    text_chunks = []
+        try:
+            ocr_reader = ocr.Reader(['en'])
+        except Exception as exc:
+            ocr_reader = None
+            return None, None, f'OCR initialization failed: {exc}'
+    all_results = []
     try:
         if file_path.lower().endswith('.pdf'):
             if convert_from_path is None:
-                return None, 'PDF OCR requires pdf2image; please install it.'
+                return None, None, 'PDF OCR requires pdf2image; please install it.'
             images = convert_from_path(file_path, fmt='png', first_page=1, last_page=1)
             for image in images:
-                # Convert PIL Image to numpy array for easyOCR
+                # Convert PIL Image to numpy array for OCR
                 img_array = np.array(image)
-                # easyOCR returns [(bbox, text, confidence), ...], extract text (index 1)
+                # OCR returns [(bbox, text, confidence), ...]
                 results = ocr_reader.readtext(img_array)
-                text = '\n'.join([result[1] for result in results])
-                text_chunks.append(text)
+                all_results.extend(results)
         else:
             with Image.open(file_path) as img:
-                # Convert PIL Image to numpy array for easyOCR
+                # Preprocess: convert to grayscale
+                img = img.convert('L')
+                # Resize to standard width (improves OCR for small/large images)
+                base_width = 1000
+                if img.width != base_width:
+                    w_percent = (base_width / float(img.width))
+                    h_size = int((float(img.height) * float(w_percent)))
+                    img = img.resize((base_width, h_size), Image.LANCZOS)
+                # Enhance contrast
+                from PIL import ImageEnhance
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(2.0)
+                # Convert PIL Image to numpy array for OCR
                 img_array = np.array(img)
-                # easyOCR returns [(bbox, text, confidence), ...], extract text (index 1)
                 results = ocr_reader.readtext(img_array)
-                text = '\n'.join([result[1] for result in results])
-                text_chunks.append(text)
+                all_results.extend(results)
     except Exception as exc:
-        return None, f'OCR failed: {exc}'
+        return None, None, f'OCR failed: {exc}'
 
+    text_chunks = [result[1] for result in all_results]
     combined_text = '\n'.join(text_chunks)
-    amount = find_total_amount_in_text(combined_text)
-    if amount is None:
-        return None, 'Could not find a recognizable total on the receipt.'
-    return amount, None
+    
+    # Get top candidates instead of just the first one
+    candidates = find_all_amounts_in_text(combined_text)
+    if not candidates:
+        return None, None, None, 'Could not find a recognizable total on the receipt.'
+    
+    amount = candidates[0]
+    top_three_candidates = candidates[:3]
+    
+    # Calculate confidence as average of all OCR result confidences
+    confidences = [result[2] for result in all_results if len(result) > 2]
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+    confidence_percent = avg_confidence * 100
+    
+    return amount, confidence_percent, top_three_candidates, None
 
 
 def save_attachment_file(expense_id, file_storage):
@@ -1223,13 +1285,14 @@ def add_expense():
 
             metadata = save_attachment_file(expense_id, attachment_file)
             ocr_detected = ocr_total_from_client
+            ocr_confidence = None
             ocr_error = None
 
             if is_receipt_attachment and ocr_detected is None:
-                ocr_detected, ocr_error = run_receipt_ocr(metadata['absolute_path'])
+                ocr_detected, ocr_confidence, ocr_candidates, ocr_error = run_receipt_ocr(metadata['absolute_path'])
 
             attachment_cursor = conn.execute(
-                'INSERT INTO expense_attachments (expense_id, file_path, original_filename, mime_type, is_receipt, ocr_total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                'INSERT INTO expense_attachments (expense_id, file_path, original_filename, mime_type, is_receipt, ocr_total, ocr_confidence, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 (
                     expense_id,
                     metadata['relative_path'],
@@ -1237,6 +1300,7 @@ def add_expense():
                     metadata['mime_type'],
                     1 if is_receipt_attachment else 0,
                     ocr_detected,
+                    ocr_confidence,
                     now
                 )
             )
@@ -1312,7 +1376,7 @@ def analyze_receipt_total():
                 file.save(tmp.name)
                 temp_path = tmp.name
 
-            detected_total, error = run_receipt_ocr(temp_path) if is_receipt_flag else (None, 'Not marked as receipt')
+            detected_total, confidence, candidates, error = run_receipt_ocr(temp_path) if is_receipt_flag else (None, None, None, 'Not marked as receipt')
         finally:
             if temp_path and os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -1320,7 +1384,10 @@ def analyze_receipt_total():
         if error or detected_total is None:
             return jsonify({'error': error or 'Unable to detect a total'}), 422
 
-        return jsonify({'detected_total': detected_total}), 200
+        response = {'detected_total': detected_total, 'detected_confidence': confidence}
+        if candidates:
+            response['candidates'] = candidates
+        return jsonify(response), 200
     except Exception as e:
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
@@ -1984,6 +2051,6 @@ if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     app.run(
         host='0.0.0.0',
-        port=5000,
+        port=int(os.environ.get('PORT', 5000)),
         debug=debug_mode
     )

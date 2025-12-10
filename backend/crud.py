@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 from collections import defaultdict
+from uuid import uuid4
 
 DB_NAME = "test.db"
 
@@ -32,9 +33,11 @@ def create_group(name, description, created_by):
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
+    # generate a short unique join code for the group
+    join_code = uuid4().hex[:8]
     cursor.execute(
-        "INSERT INTO groups (group_name, group_description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (name, description, created_by, now, now),
+        "INSERT INTO groups (group_name, group_description, join_code, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, description, join_code, created_by, now, now),
     )
     conn.commit()
     conn.close()
@@ -77,10 +80,29 @@ def record_payment(paid_by, paid_to, amount):
     cursor = conn.cursor()
     now = datetime.now().isoformat()
 
+    # Try to determine the group_id for the payment from existing balances
     cursor.execute(
-        "INSERT INTO payments (paid_by, paid_to, amount, paid_at) VALUES (?, ?, ?, ?)",
-        (paid_by, paid_to, amount, now),
+        "SELECT group_id FROM balances WHERE lender = ? AND borrower = ? LIMIT 1",
+        (paid_to, paid_by)
     )
+    grp_row = cursor.fetchone()
+    if grp_row:
+        group_id = grp_row[0]
+    else:
+        # No explicit group found; set to NULL-safe value and allow DB to enforce constraints
+        group_id = None
+
+    # Insert payment including group_id when available
+    if group_id is not None:
+        cursor.execute(
+            "INSERT INTO payments (paid_by, paid_to, amount, paid_at, group_id) VALUES (?, ?, ?, ?, ?)",
+            (paid_by, paid_to, amount, now, group_id),
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO payments (paid_by, paid_to, amount, paid_at, group_id) VALUES (?, ?, ?, ?, NULL)",
+            (paid_by, paid_to, amount, now),
+        )
 
     # fetch the existing balance from lender → borrower
     cursor.execute(
