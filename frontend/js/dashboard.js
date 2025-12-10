@@ -300,11 +300,28 @@ function setupReceiptAttachmentHandlers() {
             const data = await response.json();
             if (response.ok && typeof data.detected_total === 'number') {
                 receiptAttachmentState.detectedTotal = data.detected_total;
+                receiptAttachmentState.detectedConfidence = data.detected_confidence ?? null;
                 const amountInput = document.getElementById('expenseAmount');
                 if (amountInput) {
                     amountInput.value = Number(data.detected_total).toFixed(2);
                 }
-                updateReceiptStatus(`Detected total: $${Number(data.detected_total).toFixed(2)}`, 'success');
+                
+                let statusMessage = `Detected total: $${Number(data.detected_total).toFixed(2)}`;
+                
+                if (data.detected_confidence !== undefined && data.detected_confidence !== null) {
+                    statusMessage += `\nConfidence: ${Number(data.detected_confidence).toFixed(1)}%`;
+                }
+                
+                // Add candidates if available
+                if (data.candidates && data.candidates.length > 0) {
+                    statusMessage += '\n\nAlternatives:';
+                    data.candidates.forEach((candidate, index) => {
+                        statusMessage += `\n$${Number(candidate).toFixed(2)}`;
+                    });
+                    receiptAttachmentState.candidates = data.candidates;
+                }
+                
+                updateReceiptStatus(statusMessage, 'success', data.candidates);
             } else {
                 receiptAttachmentState.detectedTotal = null;
                 updateReceiptStatus(data.error || 'Unable to detect a total.', 'error');
@@ -341,20 +358,56 @@ function setupReceiptAttachmentHandlers() {
     });
 }
 
-function updateReceiptStatus(message, variant = 'neutral') {
+function updateReceiptStatus(message, variant = 'neutral', candidates = null) {
     const statusElement = document.getElementById('receiptOcrStatus');
     if (!statusElement) return;
-    statusElement.textContent = message || '';
+    
+    statusElement.innerHTML = '';
     statusElement.className = 'receipt-status-text';
     if (variant === 'success') {
         statusElement.classList.add('success');
     } else if (variant === 'error') {
         statusElement.classList.add('error');
     }
+    
+    if (candidates && candidates.length > 0) {
+        // Parse the message and create elements
+        const lines = message.split('\n');
+        lines.forEach((line, idx) => {
+            if (line === '') return;
+            
+            const lineEl = document.createElement('div');
+            
+            if (line.startsWith('$') && !line.includes(':') && !line.includes('total') && !line.includes('Confidence')) {
+                // This is a candidate amount
+                const button = document.createElement('button');
+                button.className = 'candidate-amount-btn';
+                button.textContent = line;
+                button.type = 'button';
+                button.onclick = (e) => {
+                    e.preventDefault();
+                    const amount = parseFloat(line.substring(1));
+                    const amountInput = document.getElementById('expenseAmount');
+                    if (amountInput) {
+                        amountInput.value = amount.toFixed(2);
+                    }
+                };
+                lineEl.appendChild(button);
+            } else {
+                lineEl.textContent = line;
+            }
+            
+            statusElement.appendChild(lineEl);
+        });
+    } else {
+        statusElement.textContent = message || '';
+    }
 }
 
 function resetReceiptAttachmentState(clearInputs = false) {
     receiptAttachmentState.detectedTotal = null;
+    receiptAttachmentState.detectedConfidence = null;
+    receiptAttachmentState.candidates = null;
     receiptAttachmentState.pending = false;
     updateReceiptStatus('');
     if (clearInputs) {

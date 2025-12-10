@@ -946,6 +946,7 @@ background: var(--dark);
     font-size: 0.85rem;
     color: #777;
     min-height: 1rem;
+    white-space: pre-line;
 }
 
 .receipt-status-text.success {
@@ -954,6 +955,31 @@ background: var(--dark);
 
 .receipt-status-text.error {
     color: #c62828;
+}
+
+.candidate-amount-btn {
+    background: white;
+    color: #333;
+    border: 2px solid #333;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 0.5rem;
+    margin-right: 0.5rem;
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.candidate-amount-btn:hover {
+    background: #333;
+    color: white;
+}
+
+.candidate-amount-btn:active {
+    background: #000;
+    color: white;
 }
 
 .activity-memo-box {
